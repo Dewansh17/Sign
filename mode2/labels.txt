@@ -1,0 +1,14 @@
+0 C
+1 L
+2 U
+3 One
+4 Two
+5 Three
+6 Four
+7 Five
+8 Six
+9 Eight
+10 Nine
+11 Please
+12 Nice
+13 House

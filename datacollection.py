@@ -6,12 +6,12 @@ import math
 import time
 
 cap=cv2.VideoCapture(0)
-detector=HandDetector(maxHands=1)   
+detector=HandDetector(maxHands=2)   
 offset = 20
 imgSize = 300
 counter = 0
 
-folder="C:\Dewansh\Ml\Signlanguage\Data\Thankyou"
+folder="C:\\Dewansh\\Ml\\Signlanguage\\Data\\House"
 
 # coding for data collection
 
