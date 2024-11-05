@@ -4,7 +4,6 @@ from cvzone.ClassificationModule import Classifier
 from PIL import ImageFont, ImageDraw, Image
 import numpy as np
 import math
-import tensorflow as tf
 
 # Initialize video capture
 cap = cv2.VideoCapture(0)
@@ -65,6 +64,8 @@ while True:
         x_max, y_max = 0, 0
         imgSize = 300
         imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
+        
+        predictions = []  # To store predictions from each hand
 
         for hand in hands:
             x, y, w, h = hand['bbox']
@@ -94,28 +95,30 @@ while True:
 
             try:
                 prediction, index = classifier.getPrediction(imgWhite, draw=False)
-                
                 if index < len(labels):
-                    label_text = labels[index]
-                    hindi_text = translations.get(label_text, {}).get("Hindi", "अज्ञात")
-                    gujarati_text = translations.get(label_text, {}).get("Gujarati", "અજ્ઞાત")
-                else:
-                    label_text = "Unknown"
-                    hindi_text = "अज्ञात"
-                    gujarati_text = "અજ્ઞાત"
+                    predictions.append(labels[index])  # Collect predictions
             except Exception as e:
                 print(f"Error during prediction: {e}")
-                label_text = "Error"
-                hindi_text = "त्रुटि"
-                gujarati_text = "ત્રુટિ"
 
-            # Overlay text using PIL for Hindi and Gujarati support
-            img_pil = Image.fromarray(imgOutput)
-            draw = ImageDraw.Draw(img_pil)
-            draw.text((x_min, y_min - 30), f"{label_text}", font=hindi_font, fill=(0, 0, 0))
-            draw.text((x_min, y_min - 60), f"{hindi_text}", font=hindi_font, fill=(255, 0, 0))
-            draw.text((x_min, y_min - 90), f"{gujarati_text}", font=gujarati_font, fill=(0, 255, 0))
-            imgOutput = np.array(img_pil)
+        # If both hands make predictions, show only if they match
+        if len(predictions) == 2 and predictions[0] == predictions[1]:
+            final_prediction = predictions[0]
+        elif predictions:  # At least one prediction exists
+            final_prediction = predictions[0]  # Show prediction from first hand
+        else:
+            final_prediction = "Unknown"  # No valid prediction
+
+        # Get translation
+        hindi_text = translations.get(final_prediction, {}).get("Hindi", "अज्ञात")
+        gujarati_text = translations.get(final_prediction, {}).get("Gujarati", "અજ્ઞાત")
+
+        # Overlay text using PIL for Hindi and Gujarati support
+        img_pil = Image.fromarray(imgOutput)
+        draw = ImageDraw.Draw(img_pil)
+        draw.text((x_min, y_min - 60), f"{final_prediction}", font=hindi_font, fill=(0, 0, 0))
+        draw.text((x_min, y_min - 90), f"{hindi_text}", font=hindi_font, fill=(255, 0, 0))
+        draw.text((x_min, y_min - 120), f"{gujarati_text}", font=gujarati_font, fill=(0, 255, 0))
+        imgOutput = np.array(img_pil)
 
         cv2.rectangle(imgOutput, (x_min - 20, y_min - 20), 
                       (x_max + 20, y_max + 20), 
