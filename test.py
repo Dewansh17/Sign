@@ -4,7 +4,9 @@ from cvzone.ClassificationModule import Classifier
 import numpy as np
 import math
 import tensorflow as tf
+from collections import Counter
 
+# Print TensorFlow and Keras versions
 print("TensorFlow version:", tf.__version__)
 print("Keras version:", tf.keras.__version__)
 
@@ -15,26 +17,23 @@ cap = cv2.VideoCapture(0)
 detector = HandDetector(maxHands=2)
 
 # File paths
-model_path = r"C:\Dewansh\Ml\Signlanguage\mode2\keras_model.h5"
-labels_path = r"C:\Dewansh\Ml\Signlanguage\mode2\labels.txt"
-
-# Load the classifier with error handling
+model_path = r"C:\Dewansh\Ml\Signlanguage\Trial\keras_model.h5"
+labels_path = r"C:\Dewansh\Ml\Signlanguage\Trial\labels.txt"
 try:
     classifier = Classifier(model_path, labels_path)
 except Exception as e:
     print(f"Error loading classifier: {e}")
     exit()
 
+# Constants
 offset = 20
 imgSize = 300
+buffer_size = 30  # Number of frames for majority voting buffer
+frame_buffer = []  # Buffer to store recent predictions
 
-# Define labels: numbers 0-9 and alphabets A-Z
+# Define labels for gestures/phrases
 labels = [
-    "C", "L", "U", "One", "Two", "Three", "Four", "Five", "Six", "Eight", "Nine", "Please", "Nice", "House"
-    # "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
-    # "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-    # "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-    # "U", "V", "W", "X", "Y", "Z"
+    "Hello, how are you", "C", "L", "Nice", "Thank you", "Please", "Yes", "House"
 ]
 
 while True:
@@ -42,78 +41,73 @@ while True:
     if not success:
         print("Failed to grab frame")
         break
-    
+
     imgOutput = img.copy()
-    hands, img = detector.findHands(img)
+    hands, img = detector.findHands(img, flipType=False)
 
     if hands:
-        # Initialize variables for combining bounding boxes
+        # Find the overall bounding box that includes both hands
         x_min, y_min = float('inf'), float('inf')
         x_max, y_max = 0, 0
-
-        imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255  # Create a white background
-
-        for hand in hands:  # Loop over detected hands
+        for hand in hands:
             x, y, w, h = hand['bbox']
-
-            # Update combined bounding box coordinates
             x_min = min(x_min, x)
             y_min = min(y_min, y)
             x_max = max(x_max, x + w)
             y_max = max(y_max, y + h)
 
-            # Crop the hand image
-            imgCrop = img[y - offset:y + h + offset, x - offset:x + w + offset]
+        # Crop combined bounding box area for both hands
+        imgCrop = img[y_min - offset:y_max + offset, x_min - offset:x_max + offset]
+        if imgCrop.size == 0:
+            continue
 
-            # Check if the crop is valid
-            if imgCrop.size == 0:
-                print("Invalid crop region, skipping.")
-                continue
+        # Resize and fit to square canvas
+        imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
+        h, w, _ = imgCrop.shape
+        aspectRatio = h / w
 
-            aspectRatio = h / w
+        if aspectRatio > 1:
+            k = imgSize / h
+            wCal = math.ceil(k * w)
+            imgResize = cv2.resize(imgCrop, (wCal, imgSize))
+            wGap = math.ceil((imgSize - wCal) / 2)
+            imgWhite[:, wGap:wCal + wGap] = imgResize
+        else:
+            k = imgSize / w
+            hCal = math.ceil(k * h)
+            imgResize = cv2.resize(imgCrop, (imgSize, hCal))
+            hGap = math.ceil((imgSize - hCal) / 2)
+            imgWhite[hGap:hCal + hGap, :] = imgResize
 
-            # Resize and adjust for aspect ratio
-            if aspectRatio > 1:
-                k = imgSize / h
-                wCal = math.ceil(k * w)
-                imgResize = cv2.resize(imgCrop, (wCal, imgSize))
-                wGap = math.ceil((imgSize - wCal) / 2)
-                imgWhite[:, wGap:wCal + wGap] = imgResize
+        # Predict the gesture
+        try:
+            prediction, index = classifier.getPrediction(imgWhite, draw=False)
+            if index < len(labels):
+                frame_buffer.append(labels[index])
             else:
-                k = imgSize / w
-                hCal = math.ceil(k * h)
-                imgResize = cv2.resize(imgCrop, (imgSize, hCal))
-                hGap = math.ceil((imgSize - hCal) / 2)
-                imgWhite[hGap:hCal + hGap, :] = imgResize
+                frame_buffer.append("Unknown")
 
-            # Predict the label
-            try:
-                prediction, index = classifier.getPrediction(imgWhite, draw=False)
-                
-                # Safeguard for index out of range
-                if index < len(labels):
-                    label_text = labels[index]
-                else:
-                    label_text = "Unknown"
-            except Exception as e:
-                print(f"Error during prediction: {e}")
-                label_text = "Error"
+            # Limit the buffer size
+            if len(frame_buffer) > buffer_size:
+                frame_buffer.pop(0)
 
-            # Show the cropped hand images
-            cv2.imshow('ImageCrop', imgCrop)
-            cv2.imshow('ImageWhite', imgWhite)
+            # Get the most common label from the buffer (majority vote)
+            final_label = Counter(frame_buffer).most_common(1)[0][0]
+        except Exception as e:
+            print(f"Error during prediction: {e}")
+            final_label = "Error"
 
-        # Draw single bounding box for both hands
-        cv2.rectangle(imgOutput, (x_min - offset, y_min - offset - 70), 
-                      (x_min - offset + 400, y_min - offset + 60 - 50), 
-                      (0, 255, 0), cv2.FILLED)
-        cv2.putText(imgOutput, label_text, (x_min, y_min - 30), 
-                    cv2.FONT_HERSHEY_COMPLEX, 2, (0, 0, 0), 2)
+        # Display label on output image
+        cv2.putText(imgOutput, final_label, (x_min, y_min - 30), 
+                    cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 2)
         cv2.rectangle(imgOutput, (x_min - offset, y_min - offset), 
-                      (x_max + offset, y_max + offset), 
-                      (0, 255, 0), 4)
+                      (x_max + offset, y_max + offset), (0, 255, 0), 4)
 
-    # Show the final image
+        # Show cropped image
+        cv2.imshow('ImageCrop', imgCrop)
+        cv2.imshow('ImageWhite', imgWhite)
+
+    # Display the output
     cv2.imshow('Image', imgOutput)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break

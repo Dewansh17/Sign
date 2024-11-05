@@ -1,0 +1,8 @@
+0 Hello, How are you
+1 C
+2 House
+3 L
+4 Nice
+5 Please
+6 U
+7 Yes
