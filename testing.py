@@ -11,19 +11,24 @@ cap = cv2.VideoCapture(0)
 # Initialize hand detector for up to 2 hands
 detector = HandDetector(maxHands=2)
 
-# File paths
-model_path = r"C:\Dewansh\Ml\Signlanguage\mode2\keras_model.h5"
-labels_path = r"C:\Dewansh\Ml\Signlanguage\mode2\labels.txt"
+# File paths for both models
+model_path_1 = r"C:\Dewansh\Ml\Signlanguage\mode2\keras_model.h5"
+labels_path_1 = r"C:\Dewansh\Ml\Signlanguage\mode2\labels.txt"
+model_path_2 = r"C:\Dewansh\Ml\Signlanguage\mode3\alphabets_model.h5"  # New model path
+labels_path_2 = r"C:\Dewansh\Ml\Signlanguage\mode3\alphabets_labels.txt"      # New label path
 
-# Load the classifier with error handling
+# Load both classifiers with error handling
 try:
-    classifier = Classifier(model_path, labels_path)
+    classifier_1 = Classifier(model_path_1, labels_path_1)
+    classifier_2 = Classifier(model_path_2, labels_path_2)
 except Exception as e:
-    print(f"Error loading classifier: {e}")
+    print(f"Error loading classifiers: {e}")
     exit()
 
-# Define labels and translations
-labels = ["C", "L", "U", "One", "Two", "Three", "Four", "Five", "Six", "Eight", "Nine", "Please", "Nice", "House"]
+# Define labels and translations for both models
+labels_1 = ["C", "L", "U", "One", "Two", "Three", "Four", "Five", "Six", "Eight", "Nine", "Please", "Nice", "House"]
+labels_2 = ["A", "B"]  # Adjust these as per model 2's dataset
+
 translations = {
     "C": {"Hindi": "सी", "Gujarati": "સી"},
     "L": {"Hindi": "एल", "Gujarati": "એલ"},
@@ -38,7 +43,9 @@ translations = {
     "Nine": {"Hindi": "नौ", "Gujarati": "નવ"},
     "Please": {"Hindi": "कृपया", "Gujarati": "કૃપા"},
     "Nice": {"Hindi": "अच्छा", "Gujarati": "સારો"},
-    "House": {"Hindi": "घर", "Gujarati": "ઘર"}
+    "House": {"Hindi": "घर", "Gujarati": "ઘર"},
+    "A": {"Hindi": "ए", "Gujarati": "એ"},
+    "B": {"Hindi": "बी", "Gujarati": "બી"}
 }
 
 # Paths to downloaded font files
@@ -49,13 +56,19 @@ gujarati_font_path = r"C:\Dewansh\Ml\Signlanguage\Fonts\NotoSansGujarati-Variabl
 hindi_font = ImageFont.truetype(hindi_font_path, 32)
 gujarati_font = ImageFont.truetype(gujarati_font_path, 32)
 
+# Single-hand gesture labels
+single_hand_gestures = ["C", "L", "U", "One", "Two", "Three", "Four", "Five", "Six", "Eight", "Nine", "Please", "Nice"]
+
+# Confidence threshold for predictions (optional)
+confidence_threshold = 0.7  # Adjust as needed
+
 # Start the loop to process frames
 while True:
     success, img = cap.read()
     if not success:
         print("Failed to grab frame")
         break
-    
+
     imgOutput = img.copy()
     hands, img = detector.findHands(img)
 
@@ -64,8 +77,8 @@ while True:
         x_max, y_max = 0, 0
         imgSize = 300
         imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
-        
-        predictions = []  # To store predictions from each hand
+
+        predictions = []
 
         for hand in hands:
             x, y, w, h = hand['bbox']
@@ -94,25 +107,28 @@ while True:
                 imgWhite[hGap:hCal + hGap, :] = imgResize
 
             try:
-                prediction, index = classifier.getPrediction(imgWhite, draw=False)
-                if index < len(labels):
-                    predictions.append(labels[index])  # Collect predictions
+                # Use the appropriate classifier based on hand count
+                if len(hands) == 1:
+                    prediction, index = classifier_1.getPrediction(imgWhite, draw=False)
+                    if index < len(labels_1) and labels_1[index] in single_hand_gestures:
+                        predictions.append(labels_1[index])
+                else:
+                    prediction, index = classifier_2.getPrediction(imgWhite, draw=False)
+                    if index < len(labels_2):
+                        predictions.append(labels_2[index])
+
             except Exception as e:
                 print(f"Error during prediction: {e}")
 
-        # If both hands make predictions, show only if they match
-        if len(predictions) == 2 and predictions[0] == predictions[1]:
-            final_prediction = predictions[0]
-        elif predictions:  # At least one prediction exists
-            final_prediction = predictions[0]  # Show prediction from first hand
+        # Majority voting on predictions if any, else "Unknown"
+        if predictions:
+            final_prediction = max(set(predictions), key=predictions.count)
         else:
-            final_prediction = "Unknown"  # No valid prediction
+            final_prediction = "Unknown"
 
-        # Get translation
         hindi_text = translations.get(final_prediction, {}).get("Hindi", "अज्ञात")
         gujarati_text = translations.get(final_prediction, {}).get("Gujarati", "અજ્ઞાત")
 
-        # Overlay text using PIL for Hindi and Gujarati support
         img_pil = Image.fromarray(imgOutput)
         draw = ImageDraw.Draw(img_pil)
         draw.text((x_min, y_min - 60), f"{final_prediction}", font=hindi_font, fill=(0, 0, 0))
@@ -120,11 +136,10 @@ while True:
         draw.text((x_min, y_min - 120), f"{gujarati_text}", font=gujarati_font, fill=(0, 255, 0))
         imgOutput = np.array(img_pil)
 
-        cv2.rectangle(imgOutput, (x_min - 20, y_min - 20), 
-                      (x_max + 20, y_max + 20), 
+        cv2.rectangle(imgOutput, (x_min - 20, y_min - 20),
+                      (x_max + 20, y_max + 20),
                       (0, 255, 0), 4)
 
-    # Show the final image
     cv2.imshow('Image', imgOutput)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
